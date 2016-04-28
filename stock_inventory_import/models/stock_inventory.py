@@ -40,37 +40,33 @@ class StockInventory(models.Model):
         if not self.import_lines:
             raise exceptions.Warning(_("There must be one line at least to "
                                        "process"))
-        inventory_line_obj = self.env['stock.inventory.line']
         stk_lot_obj = self.env['stock.production.lot']
-        product_obj = self.env['product.product']
-        for line in self.import_lines:
-            if line.fail:
+        for line in self.import_lines.filtered('fail'):
+            if not line.product:
+                line.product = self.env['product.product'].search(
+                    [('default_code', '=', line.code)], limit=1)
                 if not line.product:
-                    prod_lst = product_obj.search([('default_code', '=',
-                                                    line.code)])
-                    if prod_lst:
-                        product = prod_lst[0]
-                    else:
-                        line.fail_reason = _('No product code found')
+                    line.fail_reason = _('No product code found')
                     continue
-                else:
-                    product = line.product
-                lot_id = None
-                if line.lot:
-                    lot_lst = stk_lot_obj.search([('name', '=', line.lot)])
-                    if lot_lst:
-                        lot_id = lot_lst[0].id
-                    else:
-                        lot = stk_lot_obj.create({'name': line.lot,
-                                                  'product_id': product.id})
-                        lot_id = lot.id
-                inventory_line_obj.create({'product_id': product.id,
-                                           'product_uom_id': product.uom_id.id,
-                                           'product_qty': line.quantity,
-                                           'inventory_id': self.id,
-                                           'location_id': line.location_id.id,
-                                           'prod_lot_id': lot_id})
-                line.write({'fail': False, 'fail_reason': _('Processed')})
+            line.fail = False
+        for line in self.import_lines.filtered(lambda x: not x.fail):
+            lot = stk_lot_obj
+            if line.lot:
+                lot = stk_lot_obj.search([('name', '=', line.lot)], limit=1)
+                if not lot:
+                    lot = stk_lot_obj.create({
+                        'name': line.lot,
+                        'product_id': line.product.id,
+                    })
+            self.env['stock.inventory.line'].create({
+                'product_id': line.product.id,
+                'product_uom_id': line.product.uom_id.id,
+                'product_qty': line.quantity,
+                'inventory_id': self.id,
+                'location_id': line.location_id.id,
+                'prod_lot_id': lot.id,
+            })
+            line.fail_reason = _('Processed')
         return True
 
     @api.multi

@@ -22,24 +22,22 @@ class ImportInventory(models.TransientModel):
         return False
 
     data = fields.Binary('File', required=True)
-    name = fields.Char('Filename')
-    delimeter = fields.Char('Delimeter', default=',',
-                            help='Default delimeter is ","')
+    name = fields.Char('Filename', required=True)
+    delimeter = fields.Char(
+        string='Delimeter', default=',', help='Default delimeter is ","')
     location = fields.Many2one('stock.location', 'Default Location',
                                default=_get_default_location, required=True)
 
-    @api.one
+    @api.multi
     def action_import(self):
         """Load Inventory data from the CSV file."""
+        self.ensure_one()
         ctx = self._context
         stloc_obj = self.env['stock.location']
         inventory_obj = self.env['stock.inventory']
         inv_imporline_obj = self.env['stock.inventory.import.line']
         product_obj = self.env['product.product']
-        if 'active_id' in ctx:
-            inventory = inventory_obj.browse(ctx['active_id'])
-        if not self.data:
-            raise exceptions.Warning(_("You need to select a file!"))
+        inventory = inventory_obj.browse(ctx['active_id'])
         # Decode the file data
         data = base64.b64decode(self.data)
         file_input = cStringIO.StringIO(data)
@@ -63,12 +61,13 @@ class ImportInventory(models.TransientModel):
             raise exceptions.Warning(
                 _("Not 'code' or 'quantity' keys found"))
         del reader_info[0]
-        values = {}
-        actual_date = fields.Date.today()
-        inv_name = self.name + ' - ' + actual_date
-        inventory.write({'name': inv_name,
-                         'date': fields.Datetime.now(),
-                         'imported': True, 'state': 'confirm'})
+        inv_name = self.name + ' - ' + fields.Date.today()
+        inventory.write({
+            'name': inv_name,
+            'date': fields.Datetime.now(),
+            'imported': True,
+            'state': 'confirm',
+        })
         for i in range(len(reader_info)):
             val = {}
             field = reader_info[i]
